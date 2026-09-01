@@ -22,6 +22,9 @@ class EvaluationResult:
     mean_return: float
     return_std: float
     mean_steps: float
+    mean_optimal_steps: float
+    mean_efficiency_ratio: float
+    optimal_path_rate: float
 
 
 def shortest_path_length(
@@ -129,13 +132,28 @@ def evaluate_q_learning(
 
     episode_returns: list[float] = []
     episode_lengths: list[int] = []
+    optimal_lengths: list[int] = []
+    efficiency_ratios: list[float] = []
     outcomes: Counter[str] = Counter()
+    optimal_path_count = 0
 
     for _ in range(episodes):
         position = env.reset()
         done = False
         total_return = 0.0
         info: dict[str, str] = {}
+
+        optimal_steps = shortest_path_length(
+            grid=env.grid,
+            start=position,
+            goal=env.dot_position,
+        )
+
+        if optimal_steps is None:
+            raise RuntimeError(
+                f"No safe path exists from {position} "
+                f"to {env.dot_position}."
+            )
 
         while not done:
             state = position_to_state(
@@ -153,7 +171,18 @@ def evaluate_q_learning(
 
         episode_returns.append(total_return)
         episode_lengths.append(env.steps)
+        optimal_lengths.append(optimal_steps)
         outcomes[info["outcome"]] += 1
+
+        if info["outcome"] == "dot":
+            efficiency = optimal_steps / env.steps
+
+            if env.steps == optimal_steps:
+                optimal_path_count += 1
+        else:
+            efficiency = 0.0
+
+        efficiency_ratios.append(efficiency)
 
     return EvaluationResult(
         episodes=episodes,
@@ -163,4 +192,9 @@ def evaluate_q_learning(
         mean_return=float(np.mean(episode_returns)),
         return_std=float(np.std(episode_returns)),
         mean_steps=float(np.mean(episode_lengths)),
+        mean_optimal_steps=float(np.mean(optimal_lengths)),
+        mean_efficiency_ratio=float(
+            np.mean(efficiency_ratios)
+        ),
+        optimal_path_rate=optimal_path_count / episodes,
     )

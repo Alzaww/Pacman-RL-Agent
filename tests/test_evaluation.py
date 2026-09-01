@@ -37,6 +37,19 @@ def create_small_environment_and_agent():
     return env, agent, start_state
 
 
+def set_preferred_action(
+    env,
+    agent,
+    position,
+    action,
+):
+    state = position_to_state(
+        position,
+        env.cols,
+    )
+    agent.q_table[state, action] = 10.0
+
+
 def test_shortest_path_on_reference_grid():
     distance = shortest_path_length(
         grid=REFERENCE_GRID,
@@ -82,6 +95,9 @@ def test_evaluation_uses_greedy_policy():
     assert result.mean_return == pytest.approx(10.0)
     assert result.return_std == pytest.approx(0.0)
     assert result.mean_steps == pytest.approx(1.0)
+    assert result.mean_optimal_steps == pytest.approx(1.0)
+    assert result.mean_efficiency_ratio == pytest.approx(1.0)
+    assert result.optimal_path_rate == pytest.approx(1.0)
 
     assert agent.epsilon == pytest.approx(1.0)
 
@@ -104,6 +120,66 @@ def test_evaluation_detects_ghost_failures():
     assert result.timeout_rate == pytest.approx(0.0)
     assert result.mean_return == pytest.approx(-10.0)
     assert result.mean_steps == pytest.approx(1.0)
+    assert result.mean_efficiency_ratio == pytest.approx(0.0)
+    assert result.optimal_path_rate == pytest.approx(0.0)
+
+
+def test_evaluation_detects_suboptimal_paths():
+    grid = [
+        ["P", ".", "D"],
+        [".", ".", "."],
+        ["G", "B", "."],
+    ]
+
+    env = PacmanEnv(
+        grid=grid,
+        max_steps=10,
+    )
+
+    agent = QLearningAgent(
+        n_states=env.rows * env.cols,
+        n_actions=env.n_actions,
+        epsilon=0.0,
+        epsilon_min=0.0,
+        seed=42,
+    )
+
+    set_preferred_action(
+        env,
+        agent,
+        (0, 0),
+        Action.DOWN,
+    )
+    set_preferred_action(
+        env,
+        agent,
+        (1, 0),
+        Action.RIGHT,
+    )
+    set_preferred_action(
+        env,
+        agent,
+        (1, 1),
+        Action.RIGHT,
+    )
+    set_preferred_action(
+        env,
+        agent,
+        (1, 2),
+        Action.UP,
+    )
+
+    result = evaluate_q_learning(
+        env=env,
+        agent=agent,
+        episodes=10,
+    )
+
+    assert result.success_rate == pytest.approx(1.0)
+    assert result.mean_steps == pytest.approx(4.0)
+    assert result.mean_optimal_steps == pytest.approx(2.0)
+    assert result.mean_efficiency_ratio == pytest.approx(0.5)
+    assert result.optimal_path_rate == pytest.approx(0.0)
 
 
 def test_evaluation_rejects_invalid_episode_count():
