@@ -1,3 +1,5 @@
+import pytest
+
 from experiments.train_q_learning import run_experiment
 
 
@@ -14,6 +16,8 @@ def test_first_q_learning_experiment():
 
     assert metrics.episodes == 100
     assert metrics.success_rate >= 0.90
+    assert metrics.mean_efficiency_ratio >= 0.90
+    assert metrics.optimal_path_rate >= 0.90
 
     total_outcome_rate = (
         metrics.success_rate
@@ -21,4 +25,4 @@ def test_first_q_learning_experiment():
         + metrics.timeout_rate
     )
 
-    assert total_outcome_rate == 1.0
+    assert total_outcome_rate == pytest.approx(1.0)

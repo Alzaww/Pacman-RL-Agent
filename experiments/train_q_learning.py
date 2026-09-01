@@ -72,8 +72,23 @@ def main() -> None:
     print(f"Ghost rate: {metrics.ghost_rate:.1%}")
     print(f"Timeout rate: {metrics.timeout_rate:.1%}")
     print(f"Mean return: {metrics.mean_return:.2f}")
-    print(f"Return standard deviation: {metrics.return_std:.2f}")
+    print(
+        f"Return standard deviation: "
+        f"{metrics.return_std:.2f}"
+    )
     print(f"Mean episode length: {metrics.mean_steps:.2f}")
+    print(
+        f"Mean optimal length: "
+        f"{metrics.mean_optimal_steps:.2f}"
+    )
+    print(
+        f"Mean path efficiency: "
+        f"{metrics.mean_efficiency_ratio:.1%}"
+    )
+    print(
+        f"Optimal path rate: "
+        f"{metrics.optimal_path_rate:.1%}"
+    )
 
 
 if __name__ == "__main__":
