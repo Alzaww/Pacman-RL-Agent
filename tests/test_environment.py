@@ -1,5 +1,6 @@
 import pytest
 
+
 from pacman_rl.environment import ACTION_DELTAS, Action, PacmanEnv
 from pacman_rl.grids import EMPTY
 
@@ -152,3 +153,32 @@ def test_invalid_action_is_rejected():
 
     with pytest.raises(ValueError, match="Invalid action"):
         env.step(99)
+
+def test_default_start_remains_fixed():
+    env = PacmanEnv()
+
+    starts = {env.reset() for _ in range(20)}
+
+    assert starts == {env.start_position}
+
+
+def test_random_start_only_uses_valid_cells():
+    env = PacmanEnv(random_start=True, seed=42)
+
+    for _ in range(100):
+        position = env.reset()
+
+        assert position in env.valid_start_positions
+        assert position != env.ghost_position
+        assert position != env.dot_position
+
+
+def test_random_starts_are_reproducible():
+    first_env = PacmanEnv(random_start=True, seed=42)
+    second_env = PacmanEnv(random_start=True, seed=42)
+
+    first_sequence = [first_env.reset() for _ in range(20)]
+    second_sequence = [second_env.reset() for _ in range(20)]
+
+    assert first_sequence == second_sequence
+    assert len(set(first_sequence)) > 1

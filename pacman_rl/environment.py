@@ -1,5 +1,6 @@
 """Core Pacman grid-world environment."""
 
+import random
 from enum import IntEnum
 from typing import Any
 
@@ -44,6 +45,8 @@ class PacmanEnv:
         self,
         grid: GridLike = REFERENCE_GRID,
         max_steps: int | None = None,
+        random_start: bool = False,
+        seed: int | None = None,
     ) -> None:
         validate_grid(grid)
 
@@ -56,8 +59,19 @@ class PacmanEnv:
         self.ghost_position = self._find_cell(GHOST)
         self.dot_position = self._find_cell(DOT)
 
+        # Pacman's position is dynamic and must not remain in the fixed grid.
         start_row, start_col = self.start_position
         self.grid[start_row][start_col] = EMPTY
+
+        self.random_start = random_start
+        self._rng = random.Random(seed)
+
+        self.valid_start_positions = [
+            (row, col)
+            for row in range(self.rows)
+            for col in range(self.cols)
+            if self.grid[row][col] not in {WALL, GHOST, DOT}
+        ]
 
         if max_steps is None:
             max_steps = 2 * self.rows * self.cols
@@ -80,18 +94,30 @@ class PacmanEnv:
 
         raise ValueError(f"Cell {symbol!r} was not found in the grid.")
 
-    def reset(self) -> Position:
+    def reset(self, seed: int | None = None) -> Position:
         """Reset the episode and return Pacman's initial position."""
-        self.pacman_position = self.start_position
+        if seed is not None:
+            self._rng.seed(seed)
+
+        if self.random_start:
+            self.pacman_position = self._rng.choice(
+                self.valid_start_positions
+            )
+        else:
+            self.pacman_position = self.start_position
+
         self.steps = 0
         self.done = False
         self.last_action = None
+
         return self.pacman_position
 
     def step(self, action: Action | int) -> StepResult:
         """Execute one action in the environment."""
         if self.done:
-            raise RuntimeError("The episode is finished. Call reset() first.")
+            raise RuntimeError(
+                "The episode is finished. Call reset() first."
+            )
 
         try:
             selected_action = Action(action)
@@ -111,7 +137,10 @@ class PacmanEnv:
             and 0 <= next_col < self.cols
         )
 
-        if not inside_grid or self.grid[next_row][next_col] == WALL:
+        if (
+            not inside_grid
+            or self.grid[next_row][next_col] == WALL
+        ):
             next_row, next_col = row, col
 
         self.pacman_position = (next_row, next_col)
