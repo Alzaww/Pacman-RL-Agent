@@ -1,12 +1,13 @@
 """Evaluation utilities for learned Pacman policies."""
 
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass
 
 import numpy as np
 
 from pacman_rl.agents.q_learning import QLearningAgent
-from pacman_rl.environment import PacmanEnv
+from pacman_rl.environment import PacmanEnv, Position
+from pacman_rl.grids import GHOST, WALL, GridLike
 from pacman_rl.training import position_to_state
 
 
@@ -21,6 +22,86 @@ class EvaluationResult:
     mean_return: float
     return_std: float
     mean_steps: float
+
+
+def shortest_path_length(
+    grid: GridLike,
+    start: Position,
+    goal: Position,
+) -> int | None:
+    """Return the shortest safe distance from start to goal."""
+    if not grid or not grid[0]:
+        raise ValueError("The grid cannot be empty.")
+
+    rows = len(grid)
+    cols = len(grid[0])
+
+    if any(len(row) != cols for row in grid):
+        raise ValueError(
+            "All grid rows must have the same length."
+        )
+
+    for name, position in (
+        ("start", start),
+        ("goal", goal),
+    ):
+        row, col = position
+
+        if not (
+            0 <= row < rows
+            and 0 <= col < cols
+        ):
+            raise ValueError(
+                f"The {name} position is outside the grid: "
+                f"{position}"
+            )
+
+    if start == goal:
+        return 0
+
+    queue = deque([(start, 0)])
+    visited = {start}
+
+    movements = (
+        (-1, 0),
+        (0, -1),
+        (0, 1),
+        (1, 0),
+    )
+
+    while queue:
+        (row, col), distance = queue.popleft()
+
+        for row_delta, col_delta in movements:
+            next_position = (
+                row + row_delta,
+                col + col_delta,
+            )
+            next_row, next_col = next_position
+
+            inside_grid = (
+                0 <= next_row < rows
+                and 0 <= next_col < cols
+            )
+
+            if not inside_grid:
+                continue
+
+            if next_position in visited:
+                continue
+
+            if grid[next_row][next_col] in {WALL, GHOST}:
+                continue
+
+            if next_position == goal:
+                return distance + 1
+
+            visited.add(next_position)
+            queue.append(
+                (next_position, distance + 1)
+            )
+
+    return None
 
 
 def evaluate_q_learning(

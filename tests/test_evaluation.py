@@ -2,7 +2,11 @@ import pytest
 
 from pacman_rl.agents.q_learning import QLearningAgent
 from pacman_rl.environment import Action, PacmanEnv
-from pacman_rl.evaluation import evaluate_q_learning
+from pacman_rl.evaluation import (
+    evaluate_q_learning,
+    shortest_path_length,
+)
+from pacman_rl.grids import REFERENCE_GRID
 from pacman_rl.training import position_to_state
 
 
@@ -33,6 +37,31 @@ def create_small_environment_and_agent():
     return env, agent, start_state
 
 
+def test_shortest_path_on_reference_grid():
+    distance = shortest_path_length(
+        grid=REFERENCE_GRID,
+        start=(0, 4),
+        goal=(3, 2),
+    )
+
+    assert distance == 7
+
+
+def test_shortest_path_returns_none_when_goal_is_unreachable():
+    grid = [
+        [".", "B", "D"],
+        [".", "B", "B"],
+    ]
+
+    distance = shortest_path_length(
+        grid=grid,
+        start=(0, 0),
+        goal=(0, 2),
+    )
+
+    assert distance is None
+
+
 def test_evaluation_uses_greedy_policy():
     env, agent, start_state = (
         create_small_environment_and_agent()
@@ -54,7 +83,6 @@ def test_evaluation_uses_greedy_policy():
     assert result.return_std == pytest.approx(0.0)
     assert result.mean_steps == pytest.approx(1.0)
 
-    # Evaluation must not modify the training exploration rate.
     assert agent.epsilon == pytest.approx(1.0)
 
 
