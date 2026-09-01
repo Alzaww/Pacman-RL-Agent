@@ -112,6 +112,18 @@ class PacmanEnv:
 
         return self.pacman_position
 
+    def render_text(self) -> str:
+        """Return a text representation of the current environment."""
+        rendered_grid = copy_grid(self.grid)
+
+        row, col = self.pacman_position
+        rendered_grid[row][col] = PACMAN
+
+        return "\n".join(
+            " ".join(grid_row)
+            for grid_row in rendered_grid
+        )
+
     def step(self, action: Action | int) -> StepResult:
         """Execute one action in the environment."""
         if self.done:

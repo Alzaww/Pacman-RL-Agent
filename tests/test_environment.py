@@ -1,6 +1,5 @@
 import pytest
 
-
 from pacman_rl.environment import ACTION_DELTAS, Action, PacmanEnv
 from pacman_rl.grids import EMPTY
 
@@ -154,6 +153,7 @@ def test_invalid_action_is_rejected():
     with pytest.raises(ValueError, match="Invalid action"):
         env.step(99)
 
+
 def test_default_start_remains_fixed():
     env = PacmanEnv()
 
@@ -182,3 +182,26 @@ def test_random_starts_are_reproducible():
 
     assert first_sequence == second_sequence
     assert len(set(first_sequence)) > 1
+
+
+def test_text_rendering_shows_initial_state():
+    env = PacmanEnv()
+
+    expected = (
+        ". . . . P\n"
+        ". . B B B\n"
+        "G . B . .\n"
+        ". . D . ."
+    )
+
+    assert env.render_text() == expected
+
+
+def test_text_rendering_follows_pacman():
+    env = PacmanEnv()
+
+    env.step(Action.LEFT)
+
+    first_row = env.render_text().splitlines()[0]
+
+    assert first_row == ". . . P ."
