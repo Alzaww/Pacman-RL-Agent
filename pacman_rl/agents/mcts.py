@@ -23,6 +23,28 @@ def clone_environment(
     return copy.deepcopy(environment)
 
 
+def normalize_return(
+    total_reward: float,
+    max_steps: int,
+) -> float:
+    """Normalize a complete rollout return to the interval [0, 1]."""
+    if max_steps <= 0:
+        raise ValueError(
+            "max_steps must be strictly positive."
+        )
+
+    minimum_return = (
+        -max_steps - 9
+    )
+    maximum_return = 10
+
+    return (
+        total_reward - minimum_return
+    ) / (
+        maximum_return - minimum_return
+    )
+
+
 def random_rollout(
     environment: PacmanEnv,
     random_generator: random.Random,
@@ -308,7 +330,12 @@ class MCTSAgent:
                 ),
             )
 
+        normalized_value = normalize_return(
+            total_reward=total_reward,
+            max_steps=environment.max_steps,
+        )
+
         # Backpropagation
         node.backpropagate(
-            total_reward
+            normalized_value
         )

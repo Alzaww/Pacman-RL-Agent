@@ -6,6 +6,7 @@ from pacman_rl.agents.mcts import (
     MCTSAgent,
     MCTSNode,
     clone_environment,
+    normalize_return,
     random_rollout,
 )
 from pacman_rl.environment import (
@@ -64,6 +65,36 @@ def test_environment_clone_is_independent():
         cloned_environment.pacman_position
         != environment.pacman_position
     )
+
+
+def test_return_normalization_maps_bounds_to_unit_interval():
+    max_steps = 5
+
+    assert normalize_return(
+        total_reward=10,
+        max_steps=max_steps,
+    ) == pytest.approx(1.0)
+
+    assert normalize_return(
+        total_reward=-14,
+        max_steps=max_steps,
+    ) == pytest.approx(0.0)
+
+    assert normalize_return(
+        total_reward=-2,
+        max_steps=max_steps,
+    ) == pytest.approx(0.5)
+
+
+def test_return_normalization_rejects_invalid_max_steps():
+    with pytest.raises(
+        ValueError,
+        match="strictly positive",
+    ):
+        normalize_return(
+            total_reward=0,
+            max_steps=0,
+        )
 
 
 def test_rollout_reaches_dot_and_collects_rewards():
@@ -174,6 +205,8 @@ def test_mcts_runs_requested_number_of_simulations():
         child.visits
         for child in root.children.values()
     ) == 40
+
+    assert 0.0 <= root.mean_value <= 1.0
 
 
 def test_mcts_selects_immediate_dot():
