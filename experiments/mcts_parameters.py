@@ -1,4 +1,4 @@
-"""Compare MCTS simulation budgets and exploration weights."""
+"""Tune MCTS exploration and simulation budget."""
 
 import math
 from collections.abc import Iterable
@@ -18,6 +18,7 @@ from pacman_rl.mcts_evaluation import evaluate_mcts
 
 RESULT_COLUMNS = [
     "experiment",
+    "tree_value_scale",
     "simulations",
     "exploration_weight",
     "seed",
@@ -38,6 +39,120 @@ RESULT_COLUMNS = [
 ]
 
 
+def evaluate_configuration(
+    grid: GridLike,
+    simulations: int,
+    exploration_weight: float,
+    seed: int,
+    evaluation_episodes: int,
+    experiment: str,
+) -> dict[str, float | int | str]:
+    """Evaluate one MCTS parameter configuration."""
+    environment = PacmanEnv(
+        grid=grid,
+        random_start=True,
+        seed=seed,
+    )
+
+    agent = MCTSAgent(
+        simulations=simulations,
+        exploration_weight=exploration_weight,
+        seed=seed,
+    )
+
+    metrics = evaluate_mcts(
+        environment=environment,
+        agent=agent,
+        episodes=evaluation_episodes,
+    )
+
+    return {
+        "experiment": experiment,
+        "tree_value_scale": "normalized_0_1",
+        "simulations": simulations,
+        "exploration_weight": exploration_weight,
+        "seed": seed,
+        "evaluation_episodes": evaluation_episodes,
+        "success_rate": metrics.success_rate,
+        "ghost_rate": metrics.ghost_rate,
+        "timeout_rate": metrics.timeout_rate,
+        "mean_return": metrics.mean_return,
+        "return_std": metrics.return_std,
+        "mean_steps": metrics.mean_steps,
+        "mean_optimal_steps": (
+            metrics.mean_optimal_steps
+        ),
+        "mean_efficiency_ratio": (
+            metrics.mean_efficiency_ratio
+        ),
+        "optimal_path_rate": (
+            metrics.optimal_path_rate
+        ),
+        "total_decisions": (
+            metrics.total_decisions
+        ),
+        "total_search_time": (
+            metrics.total_search_time
+        ),
+        "mean_decision_time": (
+            metrics.mean_decision_time
+        ),
+        "decisions_per_second": (
+            metrics.decisions_per_second
+        ),
+    }
+
+
+def select_exploration_weight(
+    exploration_results: pd.DataFrame,
+) -> float:
+    """Select exploration weight by quality, then decision time."""
+    summary = (
+        exploration_results
+        .groupby("exploration_weight")
+        .agg(
+            success_rate=(
+                "success_rate",
+                "mean",
+            ),
+            optimal_path_rate=(
+                "optimal_path_rate",
+                "mean",
+            ),
+            mean_return=(
+                "mean_return",
+                "mean",
+            ),
+            mean_decision_time=(
+                "mean_decision_time",
+                "mean",
+            ),
+        )
+        .reset_index()
+    )
+
+    ranked_summary = summary.sort_values(
+        by=[
+            "success_rate",
+            "optimal_path_rate",
+            "mean_return",
+            "mean_decision_time",
+        ],
+        ascending=[
+            False,
+            False,
+            False,
+            True,
+        ],
+    )
+
+    return float(
+        ranked_summary.iloc[0][
+            "exploration_weight"
+        ]
+    )
+
+
 def run_mcts_parameter_experiments(
     grid: GridLike,
     simulation_budgets: Iterable[int],
@@ -45,10 +160,9 @@ def run_mcts_parameter_experiments(
     seeds: Iterable[int],
     evaluation_episodes: int = 20,
     fixed_simulations: int = 200,
-    fixed_exploration_weight: float = math.sqrt(2),
     show_progress: bool = False,
-) -> pd.DataFrame:
-    """Evaluate MCTS budgets and UCT exploration independently."""
+) -> tuple[pd.DataFrame, float]:
+    """Tune exploration first, then simulation budget."""
     simulation_budgets = list(
         simulation_budgets
     )
@@ -98,181 +212,140 @@ def run_mcts_parameter_experiments(
             "fixed_simulations must be strictly positive."
         )
 
-    if fixed_exploration_weight < 0:
-        raise ValueError(
-            "fixed_exploration_weight cannot be negative."
-        )
-
-    configurations = []
-
-    for budget in simulation_budgets:
-        configurations.append(
-            {
-                "experiment": "simulation_budget",
-                "simulations": budget,
-                "exploration_weight": (
-                    fixed_exploration_weight
-                ),
-            }
-        )
-
-    for weight in exploration_weights:
-        configurations.append(
-            {
-                "experiment": "exploration_weight",
-                "simulations": fixed_simulations,
-                "exploration_weight": weight,
-            }
-        )
-
     total_runs = (
-        len(configurations)
+        (
+            len(exploration_weights)
+            + len(simulation_budgets)
+        )
         * len(seeds)
     )
 
     progress_bar = tqdm(
         total=total_runs,
-        desc="MCTS parameters",
+        desc="Normalized MCTS tuning",
         unit="run",
         disable=not show_progress,
     )
 
-    results: list[
-        dict[str, float | int | str]
-    ] = []
+    exploration_rows = []
+    budget_rows = []
 
     try:
-        for configuration in configurations:
+        # First stage: tune exploration weight.
+        for exploration_weight in exploration_weights:
             for seed in seeds:
-                environment = PacmanEnv(
-                    grid=grid,
-                    random_start=True,
-                    seed=seed,
-                )
-
-                agent = MCTSAgent(
-                    simulations=configuration[
-                        "simulations"
-                    ],
-                    exploration_weight=configuration[
-                        "exploration_weight"
-                    ],
-                    seed=seed,
-                )
-
-                metrics = evaluate_mcts(
-                    environment=environment,
-                    agent=agent,
-                    episodes=evaluation_episodes,
-                )
-
-                results.append(
-                    {
-                        "experiment": configuration[
-                            "experiment"
-                        ],
-                        "simulations": configuration[
-                            "simulations"
-                        ],
-                        "exploration_weight": (
-                            configuration[
-                                "exploration_weight"
-                            ]
+                exploration_rows.append(
+                    evaluate_configuration(
+                        grid=grid,
+                        simulations=fixed_simulations,
+                        exploration_weight=(
+                            exploration_weight
                         ),
-                        "seed": seed,
-                        "evaluation_episodes": (
+                        seed=seed,
+                        evaluation_episodes=(
                             evaluation_episodes
                         ),
-                        "success_rate": (
-                            metrics.success_rate
+                        experiment=(
+                            "exploration_weight"
                         ),
-                        "ghost_rate": (
-                            metrics.ghost_rate
+                    )
+                )
+
+                progress_bar.update(1)
+
+        exploration_results = pd.DataFrame(
+            exploration_rows,
+            columns=RESULT_COLUMNS,
+        )
+
+        selected_weight = (
+            select_exploration_weight(
+                exploration_results
+            )
+        )
+
+        # Second stage: tune simulation budget
+        # with the selected exploration weight.
+        for simulations in simulation_budgets:
+            for seed in seeds:
+                budget_rows.append(
+                    evaluate_configuration(
+                        grid=grid,
+                        simulations=simulations,
+                        exploration_weight=(
+                            selected_weight
                         ),
-                        "timeout_rate": (
-                            metrics.timeout_rate
+                        seed=seed,
+                        evaluation_episodes=(
+                            evaluation_episodes
                         ),
-                        "mean_return": (
-                            metrics.mean_return
+                        experiment=(
+                            "simulation_budget"
                         ),
-                        "return_std": (
-                            metrics.return_std
-                        ),
-                        "mean_steps": (
-                            metrics.mean_steps
-                        ),
-                        "mean_optimal_steps": (
-                            metrics.mean_optimal_steps
-                        ),
-                        "mean_efficiency_ratio": (
-                            metrics.mean_efficiency_ratio
-                        ),
-                        "optimal_path_rate": (
-                            metrics.optimal_path_rate
-                        ),
-                        "total_decisions": (
-                            metrics.total_decisions
-                        ),
-                        "total_search_time": (
-                            metrics.total_search_time
-                        ),
-                        "mean_decision_time": (
-                            metrics.mean_decision_time
-                        ),
-                        "decisions_per_second": (
-                            metrics.decisions_per_second
-                        ),
-                    }
+                    )
                 )
 
                 progress_bar.update(1)
     finally:
         progress_bar.close()
 
-    return pd.DataFrame(
-        results,
+    budget_results = pd.DataFrame(
+        budget_rows,
         columns=RESULT_COLUMNS,
     )
 
-
-def main() -> None:
-    """Run and save the MCTS parameter experiments."""
-    results = run_mcts_parameter_experiments(
-        grid=REFERENCE_GRID,
-        simulation_budgets=[
-            25,
-            50,
-            100,
-            200,
-            500,
+    results = pd.concat(
+        [
+            exploration_results,
+            budget_results,
         ],
-        exploration_weights=[
-            0.0,
-            math.sqrt(2),
-            5.0,
-            10.0,
-        ],
-        seeds=[
-            0,
-            1,
-            2,
-            3,
-            4,
-        ],
-        evaluation_episodes=20,
-        fixed_simulations=200,
-        fixed_exploration_weight=math.sqrt(2),
-        show_progress=True,
+        ignore_index=True,
     )
 
-    budget_results = results[
+    return results, selected_weight
+
+
+def main() -> None:
+    """Run and save normalized MCTS parameter tuning."""
+    results, selected_weight = (
+        run_mcts_parameter_experiments(
+            grid=REFERENCE_GRID,
+            simulation_budgets=[
+                25,
+                50,
+                100,
+                200,
+                500,
+            ],
+            exploration_weights=[
+                0.0,
+                0.1,
+                0.25,
+                0.5,
+                1.0,
+                math.sqrt(2),
+            ],
+            seeds=[
+                0,
+                1,
+                2,
+                3,
+                4,
+            ],
+            evaluation_episodes=20,
+            fixed_simulations=200,
+            show_progress=True,
+        )
+    )
+
+    exploration_results = results[
         results["experiment"]
-        == "simulation_budget"
+        == "exploration_weight"
     ]
 
-    budget_summary = (
-        budget_results
-        .groupby("simulations")
+    exploration_summary = (
+        exploration_results
+        .groupby("exploration_weight")
         .agg(
             success_rate=(
                 "success_rate",
@@ -301,14 +374,14 @@ def main() -> None:
         )
     )
 
-    exploration_results = results[
+    budget_results = results[
         results["experiment"]
-        == "exploration_weight"
+        == "simulation_budget"
     ]
 
-    exploration_summary = (
-        exploration_results
-        .groupby("exploration_weight")
+    budget_summary = (
+        budget_results
+        .groupby("simulations")
         .agg(
             success_rate=(
                 "success_rate",
@@ -356,14 +429,20 @@ def main() -> None:
     )
 
     print()
+    print("Normalized MCTS exploration weight")
+    print("----------------------------------")
+    print(exploration_summary.round(4))
+
+    print()
+    print(
+        "Selected exploration weight:",
+        round(selected_weight, 4),
+    )
+
+    print()
     print("MCTS simulation budget")
     print("----------------------")
     print(budget_summary.round(4))
-
-    print()
-    print("MCTS exploration weight")
-    print("-----------------------")
-    print(exploration_summary.round(4))
 
     print()
     print(
