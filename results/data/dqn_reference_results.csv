@@ -1,0 +1,2 @@
+seed,training_episodes,evaluation_episodes,success_rate,ghost_rate,timeout_rate,mean_return,return_std,mean_steps,mean_optimal_steps,mean_efficiency_ratio,optimal_path_rate
+42,1000,200,1.0,0.0,0.0,7.73,1.7796347939956667,3.27,3.27,1.0,1.0
