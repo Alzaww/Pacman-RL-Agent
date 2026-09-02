@@ -5,12 +5,38 @@ import pytest
 from pacman_rl.agents.mcts import (
     MCTSNode,
     clone_environment,
+    random_rollout,
 )
 from pacman_rl.environment import (
     Action,
     PacmanEnv,
 )
 from pacman_rl.grids import REFERENCE_GRID
+
+
+class FixedActionGenerator:
+    """Return predetermined actions during rollout tests."""
+
+    def __init__(
+        self,
+        actions: list[Action],
+    ):
+        self.actions = actions.copy()
+
+    def choice(
+        self,
+        choices,
+    ) -> Action:
+        if not self.actions:
+            raise AssertionError(
+                "The rollout requested too many actions."
+            )
+
+        action = self.actions.pop(0)
+
+        assert action in choices
+
+        return action
 
 
 def test_environment_clone_is_independent():
@@ -37,6 +63,88 @@ def test_environment_clone_is_independent():
         cloned_environment.pacman_position
         != environment.pacman_position
     )
+
+
+def test_rollout_reaches_dot_and_collects_rewards():
+    grid = [
+        ["P", ".", "D"],
+        ["G", "B", "B"],
+    ]
+
+    environment = PacmanEnv(
+        grid=grid,
+        max_steps=5,
+    )
+
+    random_generator = FixedActionGenerator(
+        [
+            Action.RIGHT,
+            Action.RIGHT,
+        ]
+    )
+
+    total_reward = random_rollout(
+        environment=environment,
+        random_generator=random_generator,
+    )
+
+    assert total_reward == 9.0
+    assert not environment.done
+    assert environment.pacman_position == (0, 0)
+
+
+def test_rollout_can_reach_ghost():
+    grid = [
+        ["P", "D"],
+        ["G", "."],
+    ]
+
+    environment = PacmanEnv(
+        grid=grid,
+        max_steps=5,
+    )
+
+    random_generator = FixedActionGenerator(
+        [Action.DOWN]
+    )
+
+    total_reward = random_rollout(
+        environment=environment,
+        random_generator=random_generator,
+    )
+
+    assert total_reward == -10.0
+    assert not environment.done
+    assert environment.pacman_position == (0, 0)
+
+
+def test_rollout_stops_at_timeout():
+    grid = [
+        ["P", "D"],
+        ["G", "."],
+    ]
+
+    environment = PacmanEnv(
+        grid=grid,
+        max_steps=3,
+    )
+
+    random_generator = FixedActionGenerator(
+        [
+            Action.UP,
+            Action.UP,
+            Action.UP,
+        ]
+    )
+
+    total_reward = random_rollout(
+        environment=environment,
+        random_generator=random_generator,
+    )
+
+    assert total_reward == -3.0
+    assert not environment.done
+    assert environment.pacman_position == (0, 0)
 
 
 def test_new_node_has_no_search_statistics():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 from dataclasses import dataclass, field
 
 from pacman_rl.environment import (
@@ -20,6 +21,34 @@ def clone_environment(
 ) -> PacmanEnv:
     """Return an independent copy used for MCTS simulations."""
     return copy.deepcopy(environment)
+
+
+def random_rollout(
+    environment: PacmanEnv,
+    random_generator: random.Random,
+) -> float:
+    """Simulate random actions until the copied episode terminates."""
+    simulation = clone_environment(
+        environment
+    )
+
+    total_reward = 0.0
+
+    while not simulation.done:
+        action = random_generator.choice(
+            list(Action)
+        )
+
+        _, reward, done, _ = simulation.step(
+            action
+        )
+
+        total_reward += reward
+
+        if done:
+            break
+
+    return total_reward
 
 
 @dataclass
