@@ -62,9 +62,9 @@ All layouts are validated automatically, and every valid starting position has a
 
 ## Q-learning
 
-Tabular Q-learning updates one state-action value after every transition:
+Tabular Q-learning stores one value for every state-action pair. After observing a transition $(s,a,r,s')$, it applies the Bellman temporal-difference update:
 
-\[
+$$
 Q(s,a)
 \leftarrow
 Q(s,a)
@@ -74,23 +74,36 @@ Q(s,a)
 r
 +
 \gamma(1-d)
-\max_{a'}Q(s',a')
+\max_{a'} Q(s',a')
 -
 Q(s,a)
 \right].
-\]
+$$
 
-The agent uses epsilon-greedy exploration during training.
+Here:
+
+- $\alpha$ is the learning rate;
+- $\gamma$ is the discount factor;
+- $d=1$ indicates that the transition reaches a terminal state;
+- $r+\gamma(1-d)\max_{a'}Q(s',a')$ is the TD target;
+- the difference between the TD target and $Q(s,a)$ is the TD error.
+
+The agent uses epsilon-greedy exploration during training:
+
+- with probability $\epsilon$, it selects a random action;
+- otherwise, it selects the action with the largest Q-value.
 
 The experiments study:
 
-- learning rate \(\alpha\);
-- discount factor \(\gamma\);
+- learning rate $\alpha$;
+- discount factor $\gamma$;
 - several random seeds;
 - grid sizes from 4×5 to 10×10;
 - training time and path quality.
 
-A learning rate of `0.01` learns noticeably more slowly. Values between `0.1` and `0.9` converge rapidly on the tested grids. The retained configuration uses:
+A learning rate of `0.01` learns noticeably more slowly. Values between `0.1` and `0.9` converge rapidly on the tested grids.
+
+The retained configuration is:
 
 ```text
 alpha = 0.1
@@ -108,14 +121,14 @@ MCTS plans from the current state without an offline training phase.
 
 Each decision uses four phases:
 
-1. selection with the UCT criterion;
-2. expansion of an unexplored action;
-3. random simulation until a terminal state;
-4. backpropagation of the simulated return.
+1. **Selection:** descend through the tree using the UCT criterion.
+2. **Expansion:** add a previously unexplored action.
+3. **Simulation:** perform random actions until a terminal state.
+4. **Backpropagation:** propagate the simulated return through the visited nodes.
 
 The selection score is:
 
-\[
+$$
 UCT(s,a)
 =
 \overline{Q}(s,a)
@@ -124,11 +137,18 @@ c
 \sqrt{
 \frac{\ln N(s)}{N(s,a)}
 }.
-\]
+$$
 
-Internal rollout values are normalized to `[0, 1]` so that the exploitation and exploration terms have comparable scales.
+Here:
 
-The selected configuration uses:
+- $\overline{Q}(s,a)$ is the mean simulated value;
+- $N(s)$ is the number of visits to the parent;
+- $N(s,a)$ is the number of visits to the child;
+- $c$ controls the exploration-exploitation trade-off.
+
+Internal rollout values are normalized to `[0, 1]` so that the exploitation and exploration terms have comparable numerical scales.
+
+The selected configuration is:
 
 ```text
 simulations = 200
@@ -146,58 +166,133 @@ exploration_weight = 0.5
 
 Q-learning pays an initial training cost but selects actions almost immediately afterward. MCTS requires no training, but performs a new and increasingly expensive search for every action.
 
-Performance does not decrease strictly with grid size because difficulty also depends on the particular positions of walls, the ghost and the PAC-DOT.
+MCTS performance does not decrease strictly with grid size because difficulty also depends on the positions of walls, the ghost and the PAC-DOT. In the experiments, some 8×8 layouts are more difficult for MCTS than some 10×10 layouts.
+
+All observed MCTS failures correspond to collisions with the ghost rather than timeouts.
+
+## Random action errors
+
+To evaluate policy robustness, Pacman may execute an action different from the one selected by the learned Q-learning policy.
+
+If an error occurs, the executed action is sampled uniformly among the three actions different from the requested action.
+
+| Action-error probability | Success | Path efficiency | Optimal path |
+|---:|---:|---:|---:|
+| 0% | 100.0% | 100.0% | 100.0% |
+| 5% | 98.8% | 94.2% | 85.6% |
+| 10% | 97.3% | 88.1% | 72.1% |
+| 20% | 92.2% | 75.2% | 50.0% |
+
+A perfect deterministic policy does not guarantee an optimal trajectory when action execution becomes stochastic.
+
+Small error probabilities mainly cause detours. As the probability increases, the agent takes longer paths and becomes more likely to collide with the ghost. No timeout was observed during this experiment.
 
 ## Deep Q-Network
 
-The DQN replaces the Q-table with a neural approximation:
+Tabular Q-learning becomes impractical when the number of possible states is too large. A Deep Q-Network replaces the Q-table with a neural approximation parameterized by $\theta$:
 
-\[
+$$
 Q(s,a) \approx Q_\theta(s,a).
-\]
+$$
 
-Integer states are converted into one-hot vectors and processed by a multilayer perceptron:
+In this project, integer states are converted into one-hot vectors and processed by a multilayer perceptron:
 
 ```text
-Input state
-    ↓
+One-hot state
+      ↓
 64 neurons + ReLU
-    ↓
+      ↓
 64 neurons + ReLU
-    ↓
+      ↓
 4 Q-values
 ```
+
+The four outputs correspond to the four possible Pacman actions.
 
 The implementation includes:
 
 - epsilon-greedy exploration;
-- uniform replay buffer;
-- mini-batch training;
-- target network;
+- a uniform replay buffer;
+- mini-batch optimization;
+- an online network;
+- a target network;
 - terminal-state handling;
 - Huber loss.
 
-The temporal-difference target is:
+### Replay buffer
 
-\[
+Every transition is stored as:
+
+$$
+(s,a,r,s',d).
+$$
+
+Training batches are sampled uniformly from the replay buffer. Reusing past transitions improves data efficiency and reduces correlations between consecutive observations.
+
+### TD target
+
+For each sampled transition, the target is:
+
+$$
 y
 =
 r
 +
 \gamma(1-d)
-\max_{a'}Q_{\theta^-}(s',a').
-\]
+\max_{a'} Q_{\theta^-}(s',a').
+$$
 
-The online network minimizes:
+The factor $(1-d)$ removes the future-value term when the transition is terminal. Therefore:
 
-\[
-L(\theta)
+$$
+y=r
+$$
+
+for a terminal transition.
+
+The parameters $\theta^-$ belong to the target network. They are synchronized periodically with the online-network parameters $\theta$.
+
+### Huber loss
+
+The online network predicts:
+
+$$
+Q_\theta(s,a).
+$$
+
+The temporal-difference error is:
+
+$$
+\delta
 =
-\operatorname{Huber}
-\left(
-Q_\theta(s,a)-y
-\right).
-\]
+Q_\theta(s,a)-y.
+$$
+
+The DQN minimizes the Huber loss:
+
+$$
+L(\delta)
+=
+\begin{cases}
+\frac{1}{2}\delta^2,
+& \text{if } |\delta| \leq 1,\\
+|\delta|-\frac{1}{2},
+& \text{if } |\delta| > 1.
+\end{cases}
+$$
+
+The loss is quadratic for small errors and linear for large errors. It is therefore less sensitive to large TD errors than the mean squared error.
+
+In PyTorch, it is implemented using:
+
+```python
+loss = torch.nn.functional.smooth_l1_loss(
+    predicted_q_values,
+    td_targets,
+)
+```
+
+### DQN configuration
 
 The reference experiment uses:
 
@@ -211,35 +306,37 @@ target_update_interval = 100
 training_episodes = 1000
 ```
 
-Results on the reference grid:
+### DQN results
 
 | Metric | Result |
 |---|---:|
 | Success rate | 100.0% |
 | Ghost rate | 0.0% |
+| Timeout rate | 0.0% |
 | Optimal path rate | 100.0% |
 | Mean return | 7.73 |
 
-This experiment validates the DQN implementation. It is not a complete statistical comparison across all 40 layouts.
+The mean return over the final 100 training episodes is 7.40. It is slightly lower than the greedy evaluation return because the agent keeps a minimum exploration probability of $\epsilon=0.05$ during training.
 
-## Random action errors
+During evaluation, exploration is disabled and the agent always selects the action with the largest predicted Q-value.
 
-To evaluate policy robustness, Pacman may execute an action different from the one selected by the learned Q-learning policy.
+This experiment validates the replay buffer, target network, TD target and neural Q-function approximation. However, it does not constitute a complete statistical comparison across all 40 layouts.
 
-| Action-error probability | Success | Path efficiency | Optimal path |
-|---:|---:|---:|---:|
-| 0% | 100.0% | 100.0% | 100.0% |
-| 5% | 98.8% | 94.2% | 85.6% |
-| 10% | 97.3% | 88.1% | 72.1% |
-| 20% | 92.2% | 75.2% | 50.0% |
+The reference grid contains only 20 positions and four possible actions. Its Q-table therefore contains only:
 
-A perfect deterministic policy does not guarantee an optimal trajectory when action execution becomes stochastic. Small errors mainly cause detours, while larger probabilities increase the risk of collision with the ghost.
+$$
+20 \times 4 = 80
+$$
+
+state-action values. For such a small discrete state space, tabular Q-learning remains simpler, faster and easier to interpret than DQN.
 
 ## Evaluation metrics
 
 The experiments report:
 
-- success, ghost and timeout rates;
+- success rate;
+- ghost rate;
+- timeout rate;
 - mean episodic return;
 - return standard deviation;
 - mean episode length;
@@ -250,7 +347,17 @@ The experiments report:
 - mean decision time;
 - decisions per second.
 
-Shortest paths are computed with breadth-first search.
+Shortest paths are computed using breadth-first search.
+
+Path efficiency compares the shortest possible path length $L^\star$ with the observed episode length $L$:
+
+$$
+\text{efficiency}
+=
+\frac{L^\star}{L}.
+$$
+
+Failed episodes receive an efficiency of zero.
 
 ## Project structure
 
@@ -336,6 +443,18 @@ Reference Q-learning experiment:
 python -m experiments.train_q_learning
 ```
 
+Learning-rate experiment:
+
+```bash
+python -m experiments.q_learning_parameters
+```
+
+Discount-factor experiment:
+
+```bash
+python -m experiments.q_learning_gamma
+```
+
 Q-learning scaling experiment:
 
 ```bash
@@ -397,7 +516,7 @@ The notebook contains the complete analysis of:
 Experiments use explicit random seeds for:
 
 - environment starting positions;
-- epsilon-greedy action selection;
+- epsilon-greedy exploration;
 - replay-buffer sampling;
 - neural-network initialization;
 - MCTS simulations.
@@ -408,10 +527,11 @@ Detailed results are saved as CSV files so that the notebook can reproduce table
 
 - The ghost does not move.
 - Every layout contains one ghost and one PAC-DOT.
-- A separate policy is learned for each fixed layout.
+- A separate tabular policy is learned for each fixed layout.
 - The tabular and DQN states encode Pacman's position rather than raw images.
 - MCTS uses random rollouts and a fixed simulation budget.
-- The DQN result is evaluated on one reference-grid training run.
+- MCTS assumes deterministic transitions during planning.
+- The DQN experiment uses one reference-grid training run.
 - The stochastic-action experiment focuses on the learned Q-learning policy.
 
 ## Possible extensions
