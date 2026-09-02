@@ -2,8 +2,41 @@ import math
 
 import pytest
 
-from pacman_rl.agents.mcts import MCTSNode
-from pacman_rl.environment import Action
+from pacman_rl.agents.mcts import (
+    MCTSNode,
+    clone_environment,
+)
+from pacman_rl.environment import (
+    Action,
+    PacmanEnv,
+)
+from pacman_rl.grids import REFERENCE_GRID
+
+
+def test_environment_clone_is_independent():
+    environment = PacmanEnv(
+        grid=REFERENCE_GRID,
+    )
+
+    cloned_environment = clone_environment(
+        environment
+    )
+
+    cloned_environment.step(
+        Action.LEFT
+    )
+
+    assert cloned_environment is not environment
+
+    assert (
+        environment.pacman_position
+        == environment.start_position
+    )
+
+    assert (
+        cloned_environment.pacman_position
+        != environment.pacman_position
+    )
 
 
 def test_new_node_has_no_search_statistics():

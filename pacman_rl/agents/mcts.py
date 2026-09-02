@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass, field
 
-from pacman_rl.environment import Action
+from pacman_rl.environment import (
+    Action,
+    PacmanEnv,
+)
 
 
 Position = tuple[int, int]
+
+
+def clone_environment(
+    environment: PacmanEnv,
+) -> PacmanEnv:
+    """Return an independent copy used for MCTS simulations."""
+    return copy.deepcopy(environment)
 
 
 @dataclass
