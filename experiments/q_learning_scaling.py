@@ -5,12 +5,13 @@ from pathlib import Path
 from time import perf_counter
 
 import pandas as pd
+from tqdm import tqdm
 
 from pacman_rl.agents.q_learning import QLearningAgent
 from pacman_rl.environment import PacmanEnv
 from pacman_rl.evaluation import evaluate_q_learning
 from pacman_rl.grids import (
-    BENCHMARK_GRIDS,
+    GRID_GROUPS,
     GridLike,
 )
 from pacman_rl.training import train_q_learning
@@ -18,6 +19,7 @@ from pacman_rl.training import train_q_learning
 
 RESULT_COLUMNS = [
     "grid",
+    "layout",
     "rows",
     "cols",
     "n_states",
@@ -38,20 +40,39 @@ RESULT_COLUMNS = [
 
 
 def run_scaling_experiments(
-    grids: Mapping[str, GridLike],
+    grid_groups: Mapping[
+        str,
+        Iterable[GridLike],
+    ],
     seeds: Iterable[int],
     training_episodes: int = 3000,
     evaluation_episodes: int = 200,
+    show_progress: bool = False,
 ) -> pd.DataFrame:
-    """Train and evaluate Q-learning on several grid sizes."""
-    grids = dict(grids)
+    """Train Q-learning on several layouts for each grid size."""
+    grid_groups = {
+        grid_name: list(grids)
+        for grid_name, grids in grid_groups.items()
+    }
     seeds = list(seeds)
 
-    if not grids:
-        raise ValueError("grids cannot be empty.")
+    if not grid_groups:
+        raise ValueError(
+            "grid_groups cannot be empty."
+        )
+
+    if any(
+        not grids
+        for grids in grid_groups.values()
+    ):
+        raise ValueError(
+            "Grid groups cannot contain an empty layout list."
+        )
 
     if not seeds:
-        raise ValueError("seeds cannot be empty.")
+        raise ValueError(
+            "seeds cannot be empty."
+        )
 
     if training_episodes <= 0:
         raise ValueError(
@@ -63,72 +84,118 @@ def run_scaling_experiments(
             "evaluation_episodes must be strictly positive."
         )
 
-    results: list[dict[str, float | int | str]] = []
+    results: list[
+        dict[str, float | int | str]
+    ] = []
 
-    for grid_name, grid in grids.items():
-        for seed in seeds:
-            env = PacmanEnv(
-                grid=grid,
-                random_start=True,
-                seed=seed,
-            )
+    total_runs = sum(
+        len(grids) * len(seeds)
+        for grids in grid_groups.values()
+    )
 
-            agent = QLearningAgent(
-                n_states=env.rows * env.cols,
-                n_actions=env.n_actions,
-                alpha=0.1,
-                gamma=0.99,
-                epsilon=1.0,
-                epsilon_min=0.05,
-                epsilon_decay=0.995,
-                seed=seed,
-            )
+    progress_bar = tqdm(
+        total=total_runs,
+        desc="Q-learning scaling",
+        unit="run",
+        disable=not show_progress,
+    )
 
-            start_time = perf_counter()
+    try:
+        for grid_name, grids in grid_groups.items():
+            for layout_index, grid in enumerate(
+                grids,
+                start=1,
+            ):
+                for seed in seeds:
+                    env = PacmanEnv(
+                        grid=grid,
+                        random_start=True,
+                        seed=seed,
+                    )
 
-            train_q_learning(
-                env=env,
-                agent=agent,
-                episodes=training_episodes,
-            )
+                    agent = QLearningAgent(
+                        n_states=env.rows * env.cols,
+                        n_actions=env.n_actions,
+                        alpha=0.1,
+                        gamma=0.99,
+                        epsilon=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.995,
+                        seed=seed,
+                    )
 
-            training_time = perf_counter() - start_time
+                    start_time = perf_counter()
 
-            metrics = evaluate_q_learning(
-                env=env,
-                agent=agent,
-                episodes=evaluation_episodes,
-            )
+                    train_q_learning(
+                        env=env,
+                        agent=agent,
+                        episodes=training_episodes,
+                    )
 
-            results.append(
-                {
-                    "grid": grid_name,
-                    "rows": env.rows,
-                    "cols": env.cols,
-                    "n_states": env.rows * env.cols,
-                    "seed": seed,
-                    "training_episodes": training_episodes,
-                    "training_time_seconds": training_time,
-                    "episodes_per_second": (
-                        training_episodes / training_time
-                    ),
-                    "success_rate": metrics.success_rate,
-                    "ghost_rate": metrics.ghost_rate,
-                    "timeout_rate": metrics.timeout_rate,
-                    "mean_return": metrics.mean_return,
-                    "return_std": metrics.return_std,
-                    "mean_steps": metrics.mean_steps,
-                    "mean_optimal_steps": (
-                        metrics.mean_optimal_steps
-                    ),
-                    "mean_efficiency_ratio": (
-                        metrics.mean_efficiency_ratio
-                    ),
-                    "optimal_path_rate": (
-                        metrics.optimal_path_rate
-                    ),
-                }
-            )
+                    training_time = (
+                        perf_counter()
+                        - start_time
+                    )
+
+                    metrics = evaluate_q_learning(
+                        env=env,
+                        agent=agent,
+                        episodes=evaluation_episodes,
+                    )
+
+                    results.append(
+                        {
+                            "grid": grid_name,
+                            "layout": layout_index,
+                            "rows": env.rows,
+                            "cols": env.cols,
+                            "n_states": (
+                                env.rows * env.cols
+                            ),
+                            "seed": seed,
+                            "training_episodes": (
+                                training_episodes
+                            ),
+                            "training_time_seconds": (
+                                training_time
+                            ),
+                            "episodes_per_second": (
+                                training_episodes
+                                / training_time
+                            ),
+                            "success_rate": (
+                                metrics.success_rate
+                            ),
+                            "ghost_rate": (
+                                metrics.ghost_rate
+                            ),
+                            "timeout_rate": (
+                                metrics.timeout_rate
+                            ),
+                            "mean_return": (
+                                metrics.mean_return
+                            ),
+                            "return_std": (
+                                metrics.return_std
+                            ),
+                            "mean_steps": (
+                                metrics.mean_steps
+                            ),
+                            "mean_optimal_steps": (
+                                metrics.mean_optimal_steps
+                            ),
+                            "mean_efficiency_ratio": (
+                                metrics.mean_efficiency_ratio
+                            ),
+                            "optimal_path_rate": (
+                                metrics.optimal_path_rate
+                            ),
+                        }
+                    )
+
+                    progress_bar.update(1)
+    finally:
+        progress_bar.close()
 
     return pd.DataFrame(
         results,
@@ -139,16 +206,22 @@ def run_scaling_experiments(
 def main() -> None:
     """Run the complete scaling experiment."""
     results = run_scaling_experiments(
-        grids=BENCHMARK_GRIDS,
+        grid_groups=GRID_GROUPS,
         seeds=[0, 1, 2, 3, 4],
         training_episodes=3000,
         evaluation_episodes=200,
+        show_progress=True,
     )
 
-    summary = results.groupby("grid", sort=False).agg(
+    summary = results.groupby(
+        "grid",
+        sort=False,
+    ).agg(
         rows=("rows", "first"),
         cols=("cols", "first"),
         states=("n_states", "first"),
+        layouts=("layout", "nunique"),
+        runs=("seed", "size"),
         training_time_mean=(
             "training_time_seconds",
             "mean",
@@ -157,8 +230,18 @@ def main() -> None:
             "training_time_seconds",
             "std",
         ),
-        success_rate_mean=("success_rate", "mean"),
-        timeout_rate_mean=("timeout_rate", "mean"),
+        success_rate_mean=(
+            "success_rate",
+            "mean",
+        ),
+        ghost_rate_mean=(
+            "ghost_rate",
+            "mean",
+        ),
+        timeout_rate_mean=(
+            "timeout_rate",
+            "mean",
+        ),
         efficiency_mean=(
             "mean_efficiency_ratio",
             "mean",
@@ -169,7 +252,9 @@ def main() -> None:
         ),
     )
 
-    output_directory = Path("results/data")
+    output_directory = Path(
+        "results/data"
+    )
     output_directory.mkdir(
         parents=True,
         exist_ok=True,
@@ -185,11 +270,14 @@ def main() -> None:
         index=False,
     )
 
+    print()
     print("Q-learning scaling experiment")
     print("-----------------------------")
     print(summary.round(3))
     print()
-    print(f"Detailed results saved to {output_path}")
+    print(
+        f"Detailed results saved to {output_path}"
+    )
 
 
 if __name__ == "__main__":
