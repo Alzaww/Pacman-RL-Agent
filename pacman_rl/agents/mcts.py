@@ -167,3 +167,148 @@ class MCTSNode:
             node.visits += 1
             node.value_sum += value
             node = node.parent
+
+
+class MCTSAgent:
+    """Choose actions using Monte Carlo Tree Search."""
+
+    def __init__(
+        self,
+        simulations: int = 200,
+        exploration_weight: float = math.sqrt(2),
+        seed: int | None = None,
+    ):
+        if simulations <= 0:
+            raise ValueError(
+                "simulations must be strictly positive."
+            )
+
+        if exploration_weight < 0:
+            raise ValueError(
+                "exploration_weight cannot be negative."
+            )
+
+        self.simulations = simulations
+        self.exploration_weight = exploration_weight
+        self.random_generator = random.Random(
+            seed
+        )
+
+    def search(
+        self,
+        environment: PacmanEnv,
+    ) -> MCTSNode:
+        """Build and return a search tree from the current state."""
+        if environment.done:
+            raise ValueError(
+                "MCTS cannot search from a terminal state."
+            )
+
+        root = MCTSNode(
+            state=environment.pacman_position,
+        )
+
+        for _ in range(self.simulations):
+            self._run_simulation(
+                root=root,
+                environment=environment,
+            )
+
+        return root
+
+    def select_action(
+        self,
+        environment: PacmanEnv,
+    ) -> Action:
+        """Return the most visited action after MCTS simulations."""
+        root = self.search(
+            environment
+        )
+
+        best_child = max(
+            root.children.values(),
+            key=lambda child: (
+                child.visits,
+                child.mean_value,
+            ),
+        )
+
+        if best_child.action is None:
+            raise RuntimeError(
+                "The selected MCTS child has no action."
+            )
+
+        return best_child.action
+
+    def _run_simulation(
+        self,
+        root: MCTSNode,
+        environment: PacmanEnv,
+    ) -> None:
+        """Perform selection, expansion, rollout and backpropagation."""
+        simulation = clone_environment(
+            environment
+        )
+
+        node = root
+        total_reward = 0.0
+
+        # Selection
+        while (
+            not simulation.done
+            and node.is_fully_expanded
+            and node.children
+        ):
+            node = node.best_child(
+                self.exploration_weight
+            )
+
+            if node.action is None:
+                raise RuntimeError(
+                    "A non-root MCTS node must have an action."
+                )
+
+            _, reward, _, _ = simulation.step(
+                node.action
+            )
+
+            total_reward += reward
+
+        # Expansion
+        if (
+            not simulation.done
+            and node.untried_actions
+        ):
+            action = self.random_generator.choice(
+                node.untried_actions
+            )
+
+            next_state, reward, done, _ = (
+                simulation.step(action)
+            )
+
+            total_reward += reward
+
+            node = node.add_child(
+                action=action,
+                state=next_state,
+                available_actions=(
+                    []
+                    if done
+                    else list(Action)
+                ),
+            )
+
+        # Rollout
+        if not simulation.done:
+            total_reward += random_rollout(
+                environment=simulation,
+                random_generator=(
+                    self.random_generator
+                ),
+            )
+
+        # Backpropagation
+        node.backpropagate(
+            total_reward
+        )

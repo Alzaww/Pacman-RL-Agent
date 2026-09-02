@@ -3,6 +3,7 @@ import math
 import pytest
 
 from pacman_rl.agents.mcts import (
+    MCTSAgent,
     MCTSNode,
     clone_environment,
     random_rollout,
@@ -145,6 +146,110 @@ def test_rollout_stops_at_timeout():
     assert total_reward == -3.0
     assert not environment.done
     assert environment.pacman_position == (0, 0)
+
+
+def test_mcts_runs_requested_number_of_simulations():
+    grid = [
+        ["P", "D"],
+        ["G", "."],
+    ]
+
+    environment = PacmanEnv(
+        grid=grid,
+        max_steps=5,
+    )
+
+    agent = MCTSAgent(
+        simulations=40,
+        seed=42,
+    )
+
+    root = agent.search(
+        environment
+    )
+
+    assert root.visits == 40
+
+    assert sum(
+        child.visits
+        for child in root.children.values()
+    ) == 40
+
+
+def test_mcts_selects_immediate_dot():
+    grid = [
+        ["P", "D"],
+        ["G", "."],
+    ]
+
+    environment = PacmanEnv(
+        grid=grid,
+        max_steps=5,
+    )
+
+    agent = MCTSAgent(
+        simulations=200,
+        seed=42,
+    )
+
+    action = agent.select_action(
+        environment
+    )
+
+    assert action == Action.RIGHT
+    assert not environment.done
+    assert environment.pacman_position == (0, 0)
+
+
+def test_mcts_rejects_terminal_environment():
+    grid = [
+        ["P", "D"],
+        ["G", "."],
+    ]
+
+    environment = PacmanEnv(
+        grid=grid,
+        max_steps=5,
+    )
+
+    environment.step(
+        Action.RIGHT
+    )
+
+    agent = MCTSAgent(
+        simulations=10,
+        seed=42,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="terminal state",
+    ):
+        agent.select_action(
+            environment
+        )
+
+
+@pytest.mark.parametrize(
+    ("simulations", "exploration_weight", "message"),
+    [
+        (0, 1.0, "strictly positive"),
+        (10, -1.0, "cannot be negative"),
+    ],
+)
+def test_mcts_rejects_invalid_parameters(
+    simulations,
+    exploration_weight,
+    message,
+):
+    with pytest.raises(
+        ValueError,
+        match=message,
+    ):
+        MCTSAgent(
+            simulations=simulations,
+            exploration_weight=exploration_weight,
+        )
 
 
 def test_new_node_has_no_search_statistics():
