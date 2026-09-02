@@ -5,12 +5,27 @@ from pacman_rl.grids import (
     BENCHMARK_GRIDS,
     DOT,
     GHOST,
+    GRID_GROUPS,
     PACMAN,
     REFERENCE_GRID,
     WALL,
     copy_grid,
     validate_grid,
 )
+
+
+EXPECTED_SHAPES = {
+    "4x5": (4, 5),
+    "6x6": (6, 6),
+    "8x8": (8, 8),
+    "10x10": (10, 10),
+}
+
+GRID_CASES = [
+    (grid_name, grid_index)
+    for grid_name, grids in GRID_GROUPS.items()
+    for grid_index in range(len(grids))
+]
 
 
 def find_cell(grid, symbol):
@@ -77,12 +92,7 @@ def test_rejects_grid_without_ghost():
 
 @pytest.mark.parametrize(
     ("grid_name", "expected_shape"),
-    [
-        ("4x5", (4, 5)),
-        ("6x6", (6, 6)),
-        ("8x8", (8, 8)),
-        ("10x10", (10, 10)),
-    ],
+    EXPECTED_SHAPES.items(),
 )
 def test_benchmark_grid_dimensions(
     grid_name,
@@ -100,17 +110,58 @@ def test_benchmark_grid_dimensions(
 
 @pytest.mark.parametrize(
     "grid_name",
-    [
-        "4x5",
-        "6x6",
-        "8x8",
-        "10x10",
-    ],
+    EXPECTED_SHAPES,
+)
+def test_each_size_has_ten_distinct_grids(
+    grid_name,
+):
+    grids = GRID_GROUPS[grid_name]
+
+    assert len(grids) == 10
+    assert len(set(grids)) == 10
+
+
+@pytest.mark.parametrize(
+    "grid_name",
+    EXPECTED_SHAPES,
+)
+def test_original_grid_is_first_in_each_group(
+    grid_name,
+):
+    assert (
+        GRID_GROUPS[grid_name][0]
+        == BENCHMARK_GRIDS[grid_name]
+    )
+
+
+@pytest.mark.parametrize(
+    ("grid_name", "grid_index"),
+    GRID_CASES,
+)
+def test_group_grid_is_valid_and_has_expected_size(
+    grid_name,
+    grid_index,
+):
+    grid = GRID_GROUPS[grid_name][grid_index]
+    expected_shape = EXPECTED_SHAPES[grid_name]
+
+    validate_grid(grid)
+
+    rows = len(grid)
+    cols = len(grid[0])
+
+    assert (rows, cols) == expected_shape
+
+
+@pytest.mark.parametrize(
+    ("grid_name", "grid_index"),
+    GRID_CASES,
 )
 def test_every_valid_start_can_reach_dot(
     grid_name,
+    grid_index,
 ):
-    grid = BENCHMARK_GRIDS[grid_name]
+    grid = GRID_GROUPS[grid_name][grid_index]
     goal = find_cell(grid, DOT)
 
     valid_starts = [
